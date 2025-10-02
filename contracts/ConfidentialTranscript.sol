@@ -30,13 +30,11 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     }
 
     // Storage
-    mapping(uint256 => TranscriptRecord) private _transcripts;
+    mapping(address => TranscriptRecord) private _transcripts;
     mapping(address => uint256) private _studentToken; // student => tokenId (one transcript per student)
 
     mapping(uint256 => DecryptCIDRequest) private _decryptCIDRequests;
     mapping(address => uint256) private _decryptedCID;
-
-    uint256 private _nextTokenId;
 
     // Roles
     address public uni_address; // minter (university)
@@ -94,6 +92,7 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     // --- Minting (University supplies encrypted inputs) ---
     function mintTranscriptExternal(
         address student,
+        uint256 studentID,
         externalEuint256 _encCID,
         externalEuint16 _encGpa,
         bytes calldata inputProof
@@ -111,26 +110,24 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         FHE.allowThis(encGPA);
         FHE.allow(encGPA, pg_address);
 
-        uint256 tokenId = _nextTokenId++;
-        _safeMint(student, tokenId);
+        _safeMint(student, studentID);
 
-        _transcripts[tokenId] = TranscriptRecord({
+        _transcripts[student] = TranscriptRecord({
             issuer: msg.sender,
             owner: student,
             encCID: encCID,
             encGPA: encGPA,
             issuedAt: block.timestamp
         });
-        _studentToken[student] = tokenId;
+        _studentToken[student] = studentID;
 
-        emit TranscriptMinted(tokenId, student, msg.sender, encCID, encGPA);
-        return tokenId;
+        emit TranscriptMinted(studentID, student, msg.sender, encCID, encGPA);
+        return studentID;
     }
 
     function decryptCid() public returns (uint256 requestId) {
         bytes32[] memory cts = new bytes32[](1);
-        uint tokenId = _studentToken[msg.sender];
-        cts[0] = FHE.toBytes32(_transcripts[tokenId].encCID);
+        cts[0] = FHE.toBytes32(_transcripts[msg.sender].encCID);
 
         requestId = FHE.requestDecryption(cts, this.resolveCidCallback.selector);
         _decryptCIDRequests[requestId] = DecryptCIDRequest({owner: msg.sender, timestamp: block.timestamp});
@@ -146,23 +143,21 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         require(request.owner != address(0), "Invalid request ID");
 
         _decryptedCID[request.owner] = plainCid;
-        emit DecryptedCID(request.owner, plainCid, request.timestamp);
+        emit DecryptedCID(request.owner, plainCid, request.timestamp); //great
     }
 
     // --- Scholarship Eligibility ---
     function checkScholarshipEligibilityByAddress(address student, uint16 threshold) external onlyPG returns (ebool) {
-        uint256 tokenId = _studentToken[student];
-        require(tokenId != 0, "CTS: no transcript");
-        return _checkEligibility(tokenId, threshold);
+        return _checkEligibility(student, threshold);
     }
 
     function checkScholarshipEligibilityByToken(uint256 tokenId, uint16 threshold) public onlyPG returns (ebool) {
-        require(_ownerOf(tokenId) != address(0), "CTS: invalid token");
-        return _checkEligibility(tokenId, threshold);
+        address student = _ownerOf(tokenId);
+        return _checkEligibility(student, threshold);
     }
 
-    function _checkEligibility(uint256 tokenId, uint16 threshold) private returns (ebool) {
-        TranscriptRecord memory rec = _transcripts[tokenId];
+    function _checkEligibility(address student, uint16 threshold) internal returns (ebool) {
+        TranscriptRecord memory rec = _transcripts[student];
         euint16 encThreshold = FHE.asEuint16(threshold);
         // set threshold to be 350
         ebool eligible = FHE.ge(rec.encGPA, encThreshold);
@@ -173,7 +168,7 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     function revokeTranscript(uint256 tokenId) external onlyUniversity {
         require(_ownerOf(tokenId) != address(0), "token not exist");
         address student = _ownerOf(tokenId);
-        delete _transcripts[tokenId];
+        delete _transcripts[student];
         delete _studentToken[student];
         _update(address(0), tokenId, address(0));
         emit TranscriptRevoked(tokenId, msg.sender);
@@ -183,12 +178,14 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     // Return existence of encrypted CID (ciphertext is opaque)
     function getEncryptedCID(uint256 tokenId) external view returns (euint256) {
         require(_ownerOf(tokenId) != address(0), "invalid token");
-        return _transcripts[tokenId].encCID;
+        address student = _ownerOf(tokenId);
+        return _transcripts[student].encCID;
     }
 
     function getEncryptedGPA(uint256 tokenId) external view returns (euint16) {
         require(_ownerOf(tokenId) != address(0), "invalid token");
-        return _transcripts[tokenId].encGPA;
+        address student = _ownerOf(tokenId);
+        return _transcripts[student].encGPA;
     }
 
     // Admin
