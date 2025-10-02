@@ -8,6 +8,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const deployedConfidentialTranscript = await deploy("ConfidentialTranscript", {
     from: deployer,
     log: true,
+    
   });
 
   console.log(`ConfidentialTranscript contract: `, deployedConfidentialTranscript.address);
