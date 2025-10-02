@@ -27,11 +27,11 @@ const config: HardhatUserConfig = {
       sepolia: vars.get("ETHERSCAN_API_KEY", ""),
     },
   },
-  gasReporter: {
-    currency: "USD",
-    enabled: process.env.REPORT_GAS ? true : false,
-    excludeContracts: [],
-  },
+//   gasReporter: {
+//     currency: "USD",
+//     enabled: process.env.REPORT_GAS ? true : false,
+//     excludeContracts: [],
+//   },
   networks: {
     hardhat: {
       accounts: {
