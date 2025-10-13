@@ -19,7 +19,7 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     struct TranscriptRecord {
         address issuer; // university address (issuer)
         address owner; // student address (soulbound)
-        euint256 encCID; // encrypted CID digest (32 bytes -> as euint256)
+        euint256 encCID; // encrypted CID digest
         euint16 encGPA; // encrypted GPA scaled by 100
         uint256 issuedAt; // timestamp
     }
@@ -30,15 +30,18 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     }
 
     // Storage
-    mapping(address => TranscriptRecord) private _transcripts;
-    mapping(address => uint256) private _studentToken; // student => tokenId (one transcript per student)
+    mapping(address => TranscriptRecord) public _transcripts;
+    mapping(address => uint256) public _studentToken; // student => tokenId (one transcript per student)
 
-    mapping(uint256 => DecryptCIDRequest) private _decryptCIDRequests;
-    mapping(address => uint256) private _decryptedCID;
+    mapping(uint256 => DecryptCIDRequest) public _decryptCIDRequests;
+    mapping(address => uint256) public _decryptedCID;
 
     // Roles
     address public uni_address; // minter (university)
     address public pg_address; // allow post graduate address to request scholarship checks
+
+    //
+    string public cid;
 
     // Events
     event TranscriptMinted(
@@ -64,11 +67,12 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         _;
     }
 
-    constructor(address _uni_address, address _pg_address) ERC721("ConfidentialTranscript", "CTS") Ownable(msg.sender) {
+    constructor(address _uni_address, address _pg_address, string memory _cid) ERC721("ConfidentialTranscript", "CTS") Ownable(msg.sender) {
         require(_uni_address != address(0), "zero uni");
         require(_pg_address != address(0), "zero pg");
         uni_address = _uni_address;
         pg_address = _pg_address;
+        cid = _cid;
     }
 
     // --- Soulbound enforcement ---
@@ -108,7 +112,7 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         FHE.allow(encCID, student);
 
         FHE.allowThis(encGPA);
-        FHE.allow(encGPA, pg_address);
+        FHE.allow(encGPA, pg_address); 
 
         _safeMint(student, studentID);
 
@@ -136,14 +140,16 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         return requestId;
     }
 
-    function resolveCidCallback(uint256 requestId, uint256 plainCid, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestId, signatures);
+    function resolveCidCallback(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestId, cleartexts, decryptionProof);
+
+        (uint256 revealedCid) = abi.decode(cleartexts, (uint256));
 
         DecryptCIDRequest memory request = _decryptCIDRequests[requestId];
         require(request.owner != address(0), "Invalid request ID");
 
-        _decryptedCID[request.owner] = plainCid;
-        emit DecryptedCID(request.owner, plainCid, request.timestamp); //great
+        _decryptedCID[request.owner] = revealedCid;
+        emit DecryptedCID(request.owner, requestId, request.timestamp); //great
     }
 
     // --- Scholarship Eligibility ---
@@ -179,7 +185,7 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     function getEncryptedCID(uint256 tokenId) external view returns (euint256) {
         require(_ownerOf(tokenId) != address(0), "invalid token");
         address student = _ownerOf(tokenId);
-        return _transcripts[student].encCID;
+        return (_transcripts[student].encCID);
     }
 
     function getEncryptedGPA(uint256 tokenId) external view returns (euint16) {

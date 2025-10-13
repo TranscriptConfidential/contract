@@ -1,100 +1,57 @@
+
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { createInstance, createEncryptedInput } from "@zama-fhe/relayer-sdk";
-import { SepoliaConfig } from "@zama-fhe/relayer-sdk/config";
+import { ethers, fhevm } from "hardhat";
 
-describe("ConfidentialTranscript (with Relayer SDK)", function () {
-  let transcript: any;
-  let university: any, pg: any, student: any;
+describe("ConfidentialTranscript - FHE E2E (mock)", function () {
+    before(async function () {
+        [this.university, this.student] = await ethers.getSigners();
+        this.Factory = await ethers.getContractFactory("ConfidentialTranscript");
+        this.deployed = await this.Factory.deploy(this.university.address, this.student.address, "bafybeidd63tyniz4uoswngruzlwjvczf2kf5p4udd557phfjij2ycwmppa");
+        await this.deployed.waitForDeployment();
+        this.contract = this.deployed;
+        await fhevm.initializeCLIApi();
+   });
+  it("encrypts cid and gpa, requests reveal and resolves", async function () {
 
-  beforeEach(async () => {
-    [university, pg, student] = await ethers.getSigners();
 
-    const Transcript = await ethers.getContractFactory("ConfidentialTranscript");
-    transcript = await Transcript.deploy(university.address, pg.address);
-    await transcript.waitForDeployment();
+    console.log(await this.contract.getAddress());
+    console.log(this.university.address, this.student.address);
+
+    const input = await fhevm
+      .createEncryptedInput(await this.contract.getAddress(), this.university.address)
+      .add256(123n)
+      .add16(BigInt(3.52 * 1000))
+      .encrypt();
+
+    const tx = await this.contract.connect(this.university).mintTranscriptExternal(this.student.address, 123, input.handles[0], input.handles[1], input.inputProof);
+    await tx.wait();
+
+    const bl = await this.contract.balanceOf(this.student.address);
+    console.log(bl);
+    expect(bl).greaterThan(0);  
+
+
   });
 
-  it("should mint transcript with encrypted GPA + CID", async () => {
-    // 1. Init SDK (mock encryption context)
-    const instance = await createInstance(SepoliaConfig);
+  it("decrypts cid", async function () {
 
-    // 2. Encrypt student CID + GPA
-    const cidInput = createEncryptedInput(instance, student.address);
-    cidInput.addUint256(1234567890n); // fake CID digest
+    // decrypt
+    const decrypt = await this.contract.connect(this.student).decryptCid()
+    await decrypt.wait()
 
-    const gpaInput = createEncryptedInput(instance, university.address);
-    gpaInput.addUint16(375); // GPA = 3.75 scaled by 100
 
-    // 3. Prepare handles + attestation proof
-    const { handles: cidHandles, proof: cidProof } = await cidInput.encrypt();
-    const { handles: gpaHandles, proof: gpaProof } = await gpaInput.encrypt();
+    console.log("Waiting for decryption oracle...");
+    
+    // Wait for decryption
+    await fhevm.awaitDecryptionOracle();
 
-    // 4. Call mintTranscriptExternal
-    await transcript
-      .connect(university)
-      .mintTranscriptExternal(
-        student.address,
-        1,
-        cidHandles[0], // externalEuint256
-        gpaHandles[0], // externalEuint16
-        cidProof // attestation proof
-      );
+    // get revealed cid
+    const revealedCid = await this.contract._decryptedCID(this.student.address)
+    console.log(revealedCid);
+    expect(revealedCid).to.equal(123);
 
-    expect(await transcript.ownerOf(1)).to.equal(student.address);
-  });
 
-  it("should allow PG authority to check scholarship eligibility", async () => {
-    // Reuse encryption inputs
-    const instance = await createInstance(SepoliaConfig);
-    const gpaInput = createEncryptedInput(instance, university.address);
-    gpaInput.addUint16(420); // GPA = 4.20 scaled by 100
-    const { handles: gpaHandles, proof } = await gpaInput.encrypt();
-
-    const cidInput = createEncryptedInput(instance, student.address);
-    cidInput.addUint256(99999999n);
-    const { handles: cidHandles } = await cidInput.encrypt();
-
-    await transcript
-      .connect(university)
-      .mintTranscriptExternal(
-        student.address,
-        2,
-        cidHandles[0],
-        gpaHandles[0],
-        proof
-      );
-
-    // PG authority checks scholarship (threshold = 350 => 3.5 GPA)
-    const eligible = await transcript
-      .connect(pg)
-      .checkScholarshipEligibilityByToken(2, 350);
-
-    expect(eligible).to.not.equal("0x"); // returns valid ebool handle
-  });
-
-  it("should revoke transcript", async () => {
-    const instance = await createInstance(SepoliaConfig);
-    const gpaInput = createEncryptedInput(instance, university.address);
-    gpaInput.addUint16(300); // GPA = 3.00
-    const { handles: gpaHandles, proof } = await gpaInput.encrypt();
-
-    const cidInput = createEncryptedInput(instance, student.address);
-    cidInput.addUint256(8888n);
-    const { handles: cidHandles } = await cidInput.encrypt();
-
-    await transcript
-      .connect(university)
-      .mintTranscriptExternal(
-        student.address,
-        3,
-        cidHandles[0],
-        gpaHandles[0],
-        proof
-      );
-
-    await transcript.connect(university).revokeTranscript(3);
-
-    await expect(transcript.getEncryptedCID(3)).to.be.revertedWith("invalid token");
   });
 });
+
+

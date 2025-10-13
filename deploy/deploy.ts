@@ -8,6 +8,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const deployedConfidentialTranscript = await deploy("ConfidentialTranscript", {
     from: deployer,
     log: true,
+    args: ["0x621F7cCDAa5A06433AE5f89C7849EdFe605CcD6C", "0x621F7cCDAa5A06433AE5f89C7849EdFe605CcD6C", "bafybeidd63tyniz4uoswngruzlwjvczf2kf5p4udd557phfjij2ycwmppa"]
     
   });
 
