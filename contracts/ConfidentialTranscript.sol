@@ -204,4 +204,8 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         pg_address = _pg_address;
         emit PGAddressUpdated(_pg_address);
     }
+
+    function setCid(string memory _cid) external onlyOwner {
+        cid = _cid;
+    }
 }
