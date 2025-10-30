@@ -40,9 +40,6 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     address public uni_address; // minter (university)
     address public pg_address; // allow post graduate address to request scholarship checks
 
-    //
-    string public cid;
-
     // Events
     event TranscriptMinted(
         uint256 indexed tokenId,
@@ -67,12 +64,11 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         _;
     }
 
-    constructor(address _uni_address, address _pg_address, string memory _cid) ERC721("ConfidentialTranscript", "CTS") Ownable(msg.sender) {
+    constructor(address _uni_address, address _pg_address) ERC721("ConfidentialTranscript", "CTS") Ownable(msg.sender) {
         require(_uni_address != address(0), "zero uni");
         require(_pg_address != address(0), "zero pg");
         uni_address = _uni_address;
         pg_address = _pg_address;
-        cid = _cid;
     }
 
     // --- Soulbound enforcement ---
@@ -112,7 +108,7 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
         FHE.allow(encCID, student);
 
         FHE.allowThis(encGPA);
-        FHE.allow(encGPA, pg_address); 
+        FHE.allow(encGPA, pg_address);
 
         _safeMint(student, studentID);
 
@@ -203,9 +199,5 @@ contract ConfidentialTranscript is SepoliaConfig, ERC721, Ownable {
     function setPGAddress(address _pg_address) external onlyOwner {
         pg_address = _pg_address;
         emit PGAddressUpdated(_pg_address);
-    }
-
-    function setCid(string memory _cid) external onlyOwner {
-        cid = _cid;
     }
 }
